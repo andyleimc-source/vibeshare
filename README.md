@@ -1,3 +1,5 @@
+<div align="right">English | <a href="./README.zh-CN.md">简体中文</a></div>
+
 # vibeshare
 
 **Share a local HTML file or folder as a public, auto-expiring URL — in one command.**
