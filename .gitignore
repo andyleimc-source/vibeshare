@@ -5,3 +5,10 @@ firebase-debug.log
 .DS_Store
 dist/
 *.tgz
+
+# 个人本地过程文档（不入公开仓库）
+/plan.md
+/progress.md
+/decision.md
+/bug.md
+/handoff.md
