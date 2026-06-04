@@ -1,0 +1,48 @@
+{
+  "name": "vibeshare",
+  "version": "0.1.0",
+  "description": "Deploy a local HTML file or folder to a public, auto-expiring URL via Firebase Hosting preview channels. Bring your own free Firebase — no central server.",
+  "type": "module",
+  "bin": {
+    "vibeshare": "bin/vibeshare.js",
+    "vibe": "bin/vibeshare.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skill",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "firebase-tools": "^14.0.0"
+  },
+  "license": "MIT",
+  "author": "Andy Lei (andyleimc-source)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andyleimc-source/vibeshare.git"
+  },
+  "homepage": "https://github.com/andyleimc-source/vibeshare#readme",
+  "bugs": {
+    "url": "https://github.com/andyleimc-source/vibeshare/issues"
+  },
+  "keywords": [
+    "firebase",
+    "hosting",
+    "preview",
+    "share",
+    "html",
+    "cli",
+    "ephemeral",
+    "expiring",
+    "vibe-coding",
+    "static-site"
+  ]
+}
