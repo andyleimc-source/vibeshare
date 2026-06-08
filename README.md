@@ -13,6 +13,18 @@ vibeshare ./report.html                   # → https://<project>.web.app/report
 vibeshare ./report.html --password        # ...gated by an auto-generated 4-digit PIN
 ```
 
+## Features
+
+- 🌐 **One-command deploy** — turn any local `.html` into a real public URL on your own free Firebase.
+- 🔓 **Open to anyone** — share a plain link, no gate.
+- 🔑 **Password gate** — auto 4-digit PIN or your own password; the page is encrypted in the browser (AES-256), so the content never ships in the clear.
+- 📧 **Email gate** — restrict to an allow-list of emails; or require **email + password** together.
+- 🟢 **Open / close anytime** — close a page (content kept locally) and re-open it later, like toggling a Google Doc's sharing.
+- ⏰ **Scheduled auto-close** — set any lifetime (`2h`, `3d`, `2026-07-01`); pages **close** at expiry by default (delete only if you ask).
+- 🗑️ **Delete for good** — remove a page whenever you want.
+- 📋 **List & manage** — see every page's status, access mode, and expiry at a glance.
+- 🔒 **Yours alone** — no central server, no accounts to create with us, nothing to pay. Your files stay the source of truth.
+
 ## Why
 
 - **Preview anywhere** — desktop → phone, or send to a teammate/client. Links live on your project's root domain (`<project>.web.app/<slug>/`), which resolves reliably everywhere.
