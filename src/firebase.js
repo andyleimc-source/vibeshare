@@ -15,6 +15,15 @@ let cachedBin = null;
 /** @returns {{ cmd: string, prefix: string[] } | null} how to invoke firebase */
 export function resolveFirebase() {
   if (cachedBin !== null) return cachedBin;
+  // 0) explicit override — a path to a `firebase` binary. Escape hatch for when
+  //    the bundled firebase-tools is incompatible with the local Node version.
+  const override = process.env.VIBESHARE_FIREBASE_BIN;
+  if (override) {
+    cachedBin = override === 'firebase' || override.includes('/')
+      ? { cmd: override, prefix: [] }
+      : { cmd: 'firebase', prefix: [] };
+    return cachedBin;
+  }
   // 1) bundled firebase-tools
   try {
     const pkgPath = require.resolve('firebase-tools/package.json');

@@ -1,7 +1,7 @@
 {
   "name": "vibeshare",
-  "version": "0.1.0",
-  "description": "Deploy a local HTML file or folder to a public, auto-expiring URL via Firebase Hosting preview channels. Bring your own free Firebase — no central server.",
+  "version": "0.2.0",
+  "description": "Share a local HTML page as a managed public URL on your own free Firebase — with open/close control, password or email access gates, and scheduled auto-close. No central server.",
   "type": "module",
   "bin": {
     "vibeshare": "bin/vibeshare.js",

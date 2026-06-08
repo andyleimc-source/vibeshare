@@ -1,29 +1,40 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { shareCmd } from './commands/share.js';
-import { listCmd } from './commands/list.js';
-import { unshareCmd } from './commands/unshare.js';
-import { openCmd } from './commands/open.js';
-import { doctorCmd } from './commands/doctor.js';
+import {
+  shareCmd, listCmd, enableCmd, disableCmd, accessCmd,
+  expireCmd, keepCmd, rmCmd, openCmd, gcCmd,
+} from './manage.js';
 import { runInit } from './commands/init.js';
+import { doctorCmd } from './commands/doctor.js';
+import { cleanerCmd } from './commands/cleaner.js';
 import * as ui from './ui.js';
 
 const require = createRequire(import.meta.url);
 
-const FLAGS_WITH_VALUE = new Set(['--ttl', '-e', '--expires', '--project', '-P', '--name', '--id']);
-const ALIASES = { '-e': '--ttl', '--expires': '--ttl', '-P': '--project', '--id': '--name', '-y': '--yes', '-h': '--help', '-v': '--version' };
+// Flags that take a value. --password/--pin take an OPTIONAL value (a bare
+// --password auto-generates a 4-digit PIN).
+const VALUE_FLAGS = new Set(['--name', '--slug', '--title', '--email', '--expire', '--project']);
+const OPTIONAL_VALUE = new Set(['--password', '--pin']);
+const ALIASES = {
+  '-P': '--project', '--id': '--name', '-e': '--expire', '--expires': '--expire',
+  '-p': '--password', '-y': '--yes', '-h': '--help', '-v': '--version',
+};
 
 function parse(argv) {
   const positionals = [];
   const opts = {};
   for (let i = 0; i < argv.length; i++) {
-    let a = argv[i];
-    if (a.startsWith('-')) {
+    const a = argv[i];
+    if (a.startsWith('-') && a !== '-') {
       const norm = ALIASES[a] || a;
-      if (FLAGS_WITH_VALUE.has(a) || FLAGS_WITH_VALUE.has(norm)) {
-        opts[norm.replace(/^--/, '')] = argv[++i];
+      const key = norm.replace(/^--/, '');
+      if (VALUE_FLAGS.has(norm)) {
+        opts[key] = argv[++i];
+      } else if (OPTIONAL_VALUE.has(norm)) {
+        const next = argv[i + 1];
+        opts[key] = next !== undefined && !next.startsWith('-') ? argv[++i] : '';
       } else {
-        opts[norm.replace(/^--/, '')] = true;
+        opts[key] = true;
       }
     } else {
       positionals.push(a);
@@ -33,59 +44,73 @@ function parse(argv) {
 }
 
 function version() {
-  const pkg = JSON.parse(readFileSync(require.resolve('../package.json'), 'utf8'));
-  return pkg.version;
+  return JSON.parse(readFileSync(require.resolve('../package.json'), 'utf8')).version;
 }
 
-const HELP = `vibeshare — share a local HTML file/folder as a public, auto-expiring URL.
+const HELP = `vibeshare — share a local HTML page as a managed public URL with access control.
+
+Pages live at https://<project>.web.app/<slug>/ and have two independent axes —
+open/closed and how they're accessed — plus optional auto-expiry.
 
 Usage:
-  vibeshare <path> [--ttl 7d] [--name <slug>] [--open]   deploy & get a link (default)
-  vibeshare share <path> [...]                            same as above
-  vibeshare list                                          list active links
-  vibeshare unshare <id>                                  remove a link early
-  vibeshare open <id>                                     open a link in the browser
-  vibeshare init                                          first-time setup (login + project)
-  vibeshare doctor                                        check your setup
+  vibeshare <file.html> [access] [--expire 3d] [--name slug]   deploy & get a link
+  vibeshare list                                               list your pages
+  vibeshare enable  <slug>                                     open (serve) a page
+  vibeshare disable <slug>                                     close it (content kept)
+  vibeshare access  <slug> [access]                            change how it's accessed
+  vibeshare expire  <slug> <when> [--delete]                   auto-close (default) at a time
+  vibeshare keep    <slug>                                     cancel auto-expiry
+  vibeshare rm      <slug>                                     delete it for good
+  vibeshare open    <slug>                                     open it in the browser
+  vibeshare gc                                                 apply due expiries now
+  vibeshare cleaner install|uninstall|status                  background auto-expiry (launchd)
+  vibeshare init                                               first-time setup (login + project)
+  vibeshare doctor                                             check your setup
+
+Access (compose freely; default = anyone):
+  --password [PIN]    require a password (bare flag auto-generates a 4-digit PIN)
+  --email a@b,c@d     require one of these emails (soft gate — emails aren't secret)
+  --email … --password …   require a valid email AND the password (recommended)
 
 Options:
-  --ttl, -e <dur>     lifetime: 12h, 3d, 30d, or bare days (default 7d, max 30d)
-  --name, --id <s>    custom channel id (default: auto from filename + timestamp)
-  --project, -P <id>  Firebase project id (default: configured)
-  --open              open the URL after deploying
-  --json              machine-readable output (implies non-interactive)
-  --yes, -y           skip confirmations
-  --debug             verbose firebase output
-  --help, -h          this help
-  --version, -v       print version
+  --expire <when>     30m, 2h, 3d, 2w, a bare number of days, or 2026-07-01[THH:MM]
+  --delete            with expire: delete instead of just closing at expiry
+  --name, --slug <s>  custom slug (default: from filename)
+  --title <s>         page title shown on the gate (default: <title> or slug)
+  --project, -P <id>  Firebase project (default: configured)
+  --force             overwrite an existing slug
+  --json              machine-readable output
+  --help, -h          this help     --version, -v   print version
 
 Backend: bring-your-own free Firebase Hosting. Run \`vibeshare init\` once.`;
 
-const COMMANDS = new Set(['share', 'list', 'unshare', 'rm', 'delete', 'open', 'init', 'doctor', 'help']);
+const COMMANDS = new Set(['share', 'list', 'enable', 'disable', 'access', 'expire', 'keep', 'rm', 'delete', 'remove', 'open', 'gc', 'cleaner', 'init', 'doctor', 'help']);
 
 export async function main(argv) {
   const { positionals, opts } = parse(argv);
-
   if (opts.version) { process.stdout.write(version() + '\n'); return 0; }
   if (opts.help && positionals.length === 0) { process.stdout.write(HELP + '\n'); return 0; }
 
   let cmd = positionals[0];
   let rest = positionals.slice(1);
-  // default command = share (when first positional isn't a known command)
-  if (!cmd || !COMMANDS.has(cmd)) {
-    cmd = 'share';
-    rest = positionals;
-  }
+  if (!cmd || !COMMANDS.has(cmd)) { cmd = 'share'; rest = positionals; }
 
   try {
     switch (cmd) {
       case 'help': process.stdout.write(HELP + '\n'); return 0;
       case 'share': await shareCmd(rest[0], opts); return 0;
       case 'list': await listCmd(opts); return 0;
-      case 'unshare':
+      case 'enable': await enableCmd(rest[0], opts); return 0;
+      case 'disable': await disableCmd(rest[0], opts); return 0;
+      case 'access': await accessCmd(rest[0], opts); return 0;
+      case 'expire': await expireCmd(rest[0], rest[1], opts); return 0;
+      case 'keep': await keepCmd(rest[0], opts); return 0;
       case 'rm':
-      case 'delete': await unshareCmd(rest[0], opts); return 0;
+      case 'delete':
+      case 'remove': await rmCmd(rest[0], opts); return 0;
       case 'open': await openCmd(rest[0], opts); return 0;
+      case 'gc': await gcCmd(opts); return 0;
+      case 'cleaner': await cleanerCmd(rest[0], opts); return 0;
       case 'init': await runInit(opts); return 0;
       case 'doctor': await doctorCmd(opts); return 0;
       default: process.stdout.write(HELP + '\n'); return 1;

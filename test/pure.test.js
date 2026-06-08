@@ -1,34 +1,58 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTtl, BadTtlError, MAX_SECONDS } from '../src/ttl.js';
+import { resolveWhen, parseDurationSeconds, BadWhenError, relativeLabel } from '../src/when.js';
+import { gateHtml, normalizeEmail } from '../src/gate.js';
 import { slugify, shortStamp, makeChannelId } from '../src/channel.js';
 import { classifyFirebaseError, CODES, parseLoginList, extractChannelUrl } from '../src/classify.js';
 
-test('parseTtl: defaults to 7d', () => {
-  assert.equal(parseTtl().duration, '7d');
-  assert.equal(parseTtl('').duration, '7d');
+test('parseDurationSeconds: units, bare days, compounds', () => {
+  assert.equal(parseDurationSeconds('30m'), 1800);
+  assert.equal(parseDurationSeconds('2h'), 7200);
+  assert.equal(parseDurationSeconds('3d'), 3 * 86400);
+  assert.equal(parseDurationSeconds('2w'), 2 * 604800);
+  assert.equal(parseDurationSeconds('7'), 7 * 86400); // bare → days
+  assert.equal(parseDurationSeconds('1d12h'), 86400 + 12 * 3600); // compound
+  assert.equal(parseDurationSeconds('3x'), null); // stray unit
+  assert.equal(parseDurationSeconds('abc'), null);
 });
 
-test('parseTtl: days, hours, bare number', () => {
-  assert.deepEqual(parseTtl('3d'), { duration: '3d', seconds: 3 * 86400, clamped: false });
-  assert.deepEqual(parseTtl('12h'), { duration: '12h', seconds: 12 * 3600, clamped: false });
-  assert.equal(parseTtl('5').duration, '5d'); // bare number → days
-  assert.equal(parseTtl('  30D ').duration, '30d'); // trim + case
+test('resolveWhen: relative is unbounded (no 30d cap)', () => {
+  const now = Date.UTC(2026, 0, 1, 0, 0, 0);
+  assert.equal(resolveWhen('60d', now).getTime(), now + 60 * 86400 * 1000); // > 30d, allowed
+  assert.equal(resolveWhen('2h', now).getTime(), now + 7200 * 1000);
 });
 
-test('parseTtl: clamps over 30d', () => {
-  const r = parseTtl('60d');
-  assert.equal(r.duration, '30d');
-  assert.equal(r.seconds, MAX_SECONDS);
-  assert.equal(r.clamped, true);
-  assert.equal(parseTtl('1000h').clamped, true); // 1000h > 30d
+test('resolveWhen: absolute date + datetime', () => {
+  assert.equal(resolveWhen('2026-07-01').getFullYear(), 2026);
+  assert.match(resolveWhen('2026-07-01T18:30').toISOString(), /2026-07-01T/);
 });
 
-test('parseTtl: rejects garbage / zero / negative', () => {
-  for (const bad of ['abc', '0', '0d', '-3d', '3w', '', ' ', 'd', '3.5.2']) {
-    if (bad === '' || bad === ' ') continue; // empty → default, tested above
-    assert.throws(() => parseTtl(bad), BadTtlError, `should reject "${bad}"`);
+test('resolveWhen: rejects garbage / zero / negative', () => {
+  for (const bad of ['abc', '0', '0d', '-3d', 'd', '', ' ', '3.5.2x']) {
+    assert.throws(() => resolveWhen(bad), BadWhenError, `should reject "${bad}"`);
   }
+});
+
+test('relativeLabel: relative + overdue', () => {
+  const now = Date.UTC(2026, 0, 1);
+  assert.equal(relativeLabel(new Date(now + 3 * 86400e3).toISOString(), now), 'in 3d');
+  assert.equal(relativeLabel(new Date(now - 1000).toISOString(), now), 'overdue');
+  assert.equal(relativeLabel(null), '—');
+});
+
+test('gate: anyone passes through, gated modes are encrypted (no plaintext leak)', () => {
+  const PAGE = '<!doctype html><h1>SECRET-MARKER-机密</h1>';
+  assert.equal(gateHtml(PAGE, { mode: 'anyone' }), PAGE);
+  for (const spec of [
+    { mode: 'password', pin: '4821' },
+    { mode: 'email', emails: ['a@b.com'] },
+    { mode: 'email_password', emails: ['a@b.com'], pin: '9999' },
+  ]) {
+    const out = gateHtml(PAGE, spec);
+    assert.ok(!out.includes('SECRET-MARKER'), `${spec.mode} must not leak plaintext`);
+    assert.ok(out.includes('crypto.subtle'), `${spec.mode} must embed the client gate`);
+  }
+  assert.equal(normalizeEmail('  Alice@X.COM '), 'alice@x.com');
 });
 
 test('slugify: lowercases, strips, collapses, caps length', () => {
@@ -67,13 +91,13 @@ test('classifyFirebaseError: login / reauth / project / quota', () => {
 });
 
 test('parseLoginList: single + multi', () => {
-  assert.deepEqual(parseLoginList('Logged in as andylei.mc@gmail.com'), ['andylei.mc@gmail.com']);
+  assert.deepEqual(parseLoginList('Logged in as user@example.com'), ['user@example.com']);
   const multi = parseLoginList('Logged in as a@x.com\n- b@y.com (default)\n- c@z.com');
   assert.ok(multi.includes('a@x.com') && multi.includes('b@y.com') && multi.includes('c@z.com'));
 });
 
 test('extractChannelUrl', () => {
-  const text = 'Channel URL (demo): https://mpc2026-4f4bd--demo-1k2j3.web.app [expires ...]';
-  assert.equal(extractChannelUrl(text), 'https://mpc2026-4f4bd--demo-1k2j3.web.app');
+  const text = 'Channel URL (demo): https://myproject-1234--demo-1k2j3.web.app [expires ...]';
+  assert.equal(extractChannelUrl(text), 'https://myproject-1234--demo-1k2j3.web.app');
   assert.equal(extractChannelUrl('no url here'), null);
 });
