@@ -52,6 +52,10 @@ const HELP = `vibeshare — share a local HTML page as a managed public URL with
 Pages live at https://<project>.web.app/<slug>/ and have two independent axes —
 open/closed and how they're accessed — plus optional auto-expiry.
 
+Slugs are hierarchical: the default is <folder>/<file> (the enclosing git repo
+or cwd name, then the filename), e.g. sage/brand-guidelines. Pass --name to
+override — "--name docs/api/v2" nests (max 3 levels), "--name landing" is flat.
+
 Usage:
   vibeshare <file.html> [access] [--expire 3d] [--name slug]   deploy & get a link
   vibeshare list                                               list your pages
@@ -75,7 +79,7 @@ Access (compose freely; default = anyone):
 Options:
   --expire <when>     30m, 2h, 3d, 2w, a bare number of days, or 2026-07-01[THH:MM]
   --delete            with expire: delete instead of just closing at expiry
-  --name, --slug <s>  custom slug (default: from filename)
+  --name, --slug <s>  custom slug, "/" nests (default: <repo-or-cwd>/<filename>)
   --title <s>         page title shown on the gate (default: <title> or slug)
   --project, -P <id>  Firebase project (default: configured)
   --force             overwrite an existing slug

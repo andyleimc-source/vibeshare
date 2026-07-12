@@ -6,15 +6,36 @@
 const MAX_SLUG = 20;
 
 /** Sanitize an arbitrary string into a valid, short channel slug. */
-export function slugify(input) {
+export function slugify(input, maxLen = MAX_SLUG) {
   const s = String(input || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-') // non-alnum → hyphen
     .replace(/^-+|-+$/g, '') // trim hyphens
     .replace(/-{2,}/g, '-') // collapse
-    .slice(0, MAX_SLUG)
+    .slice(0, maxLen)
     .replace(/-+$/g, ''); // trim again after slice
   return s;
+}
+
+// Root-domain paths (not subdomains) — segments can be a bit longer.
+const MAX_SEGMENT = 32;
+const MAX_DEPTH = 3;
+
+/**
+ * Sanitize a (possibly nested) page path into a slug like "project/asset".
+ * Each `/`-separated segment is slugified independently; empty segments drop
+ * out (so "../x" or "//x" cannot escape public/). Depth caps at 3 — deeper
+ * segments fold into the last one.
+ */
+export function slugifyPath(input) {
+  const segs = String(input || '')
+    .split('/')
+    .map((s) => slugify(s, MAX_SEGMENT))
+    .filter(Boolean);
+  if (segs.length === 0) return '';
+  const head = segs.slice(0, MAX_DEPTH - 1);
+  const tail = segs.slice(MAX_DEPTH - 1).join('-').slice(0, MAX_SEGMENT).replace(/-+$/g, '');
+  return [...head, tail].filter(Boolean).join('/');
 }
 
 /** base36 of a timestamp, last 5 chars — a short, monotonic-ish uniquifier. */

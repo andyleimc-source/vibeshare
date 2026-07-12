@@ -126,19 +126,48 @@ export async function withLock(fn, { timeoutMs = 30000 } = {}) {
   }
 }
 
-/** Remove a slug's deployed artifact + retained source (manifest entry handled by caller). */
-export function removePageFiles(slug) {
-  rmSync(paths.pageDir(slug), { recursive: true, force: true });
-  rmSync(paths.source(slug), { force: true });
+/** Remove empty ancestor dirs of `p`, stopping at (and never removing) `stopAt`. */
+function pruneEmptyDirs(p, stopAt) {
+  let dir = path.dirname(p);
+  while (dir.startsWith(stopAt) && dir !== stopAt) {
+    try {
+      if (readdirSync(dir).length > 0) break;
+      rmSync(dir, { recursive: false, force: true });
+    } catch { break; }
+    dir = path.dirname(dir);
+  }
 }
 
-/** List slug dirs currently present under public/ (for reconcile drift detection). */
+/**
+ * Remove a slug's deployed artifact + retained source (manifest entry handled
+ * by the caller). Surgical on purpose: slugs can nest ("project/asset"), so we
+ * only delete this page's own index.html and prune now-empty parents — a
+ * recursive rm of the page dir could take live child pages with it.
+ */
+export function removePageFiles(slug) {
+  const indexHtml = path.join(paths.pageDir(slug), 'index.html');
+  rmSync(indexHtml, { force: true });
+  pruneEmptyDirs(indexHtml, paths.public());
+  const source = paths.source(slug);
+  rmSync(source, { force: true });
+  pruneEmptyDirs(source, paths.sources());
+}
+
+/** List page dirs (relative, possibly nested) under public/ that hold an index.html — for reconcile drift detection. */
 export function publicSlugs() {
-  try {
-    return readdirSync(paths.public(), { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
-  } catch {
-    return [];
-  }
+  const out = [];
+  const root = paths.public();
+  const walk = (rel) => {
+    const abs = rel ? path.join(root, rel) : root;
+    let entries;
+    try { entries = readdirSync(abs, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const childRel = rel ? `${rel}/${e.name}` : e.name;
+      if (existsSync(path.join(root, childRel, 'index.html'))) out.push(childRel);
+      walk(childRel);
+    }
+  };
+  walk('');
+  return out;
 }

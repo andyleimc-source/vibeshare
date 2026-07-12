@@ -51,14 +51,15 @@ Logs you into Google/Firebase in your browser and picks (or helps you create) a 
 ## Use
 
 ```bash
-# deploy
+# deploy (default slug = <repo-or-cwd>/<filename>, e.g. /acme/report/)
 vibeshare ./report.html                          # open to anyone
 vibeshare ./report.html --password               # auto-generated 4-digit PIN
 vibeshare ./report.html --password 1234          # your own password
 vibeshare ./report.html --email a@x.com,b@y.com  # only these emails
 vibeshare ./report.html --email a@x.com --password 1234   # email AND password
 vibeshare ./report.html --expire 3d              # auto-close in 3 days (also 2h, 2w, 2026-07-01)
-vibeshare ./report.html --name launch            # custom slug → /launch/
+vibeshare ./report.html --name launch            # flat custom slug → /launch/
+vibeshare ./report.html --name acme/q3           # nested slug → /acme/q3/ (max 3 levels)
 
 # manage
 vibeshare list                                   # all pages: open/closed · access · expiry · URL

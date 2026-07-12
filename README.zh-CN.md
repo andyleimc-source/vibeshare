@@ -51,14 +51,15 @@ vibeshare init
 ## 使用
 
 ```bash
-# 部署
+# 部署（默认 slug = <仓库或目录名>/<文件名>，如 /acme/report/）
 vibeshare ./report.html                          # 所有人可看
 vibeshare ./report.html --password               # 自动生成 4 位数字密码
 vibeshare ./report.html --password 1234          # 自定义密码
 vibeshare ./report.html --email a@x.com,b@y.com  # 仅这些邮箱可进
 vibeshare ./report.html --email a@x.com --password 1234   # 邮箱 + 密码
 vibeshare ./report.html --expire 3d              # 3 天后自动关闭（也支持 2h、2w、2026-07-01）
-vibeshare ./report.html --name launch            # 自定义 slug → /launch/
+vibeshare ./report.html --name launch            # 平铺自定义 slug → /launch/
+vibeshare ./report.html --name acme/q3           # 分级 slug → /acme/q3/（最多 3 级）
 
 # 管理
 vibeshare list                                   # 所有页面：开启/关闭 · 访问方式 · 到期 · URL

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveWhen, parseDurationSeconds, BadWhenError, relativeLabel } from '../src/when.js';
 import { gateHtml, normalizeEmail } from '../src/gate.js';
-import { slugify, shortStamp, makeChannelId } from '../src/channel.js';
+import { slugify, slugifyPath, shortStamp, makeChannelId } from '../src/channel.js';
 import { classifyFirebaseError, CODES, parseLoginList, extractChannelUrl } from '../src/classify.js';
 
 test('parseDurationSeconds: units, bare days, compounds', () => {
@@ -62,6 +62,16 @@ test('slugify: lowercases, strips, collapses, caps length', () => {
   assert.equal(slugify('日本語ABC'), 'abc');
   assert.equal(slugify(''), '');
   assert.ok(slugify('x'.repeat(50)).length <= 20);
+});
+
+test('slugifyPath: nested slugs, sanitized per segment', () => {
+  assert.equal(slugifyPath('sage/Brand Guidelines'), 'sage/brand-guidelines');
+  assert.equal(slugifyPath('landing'), 'landing');            // flat stays flat
+  assert.equal(slugifyPath('//a///b/'), 'a/b');               // empty segments drop
+  assert.equal(slugifyPath('../..//etc/passwd'), 'etc/passwd'); // no traversal
+  assert.equal(slugifyPath('a/b/c/d/e'), 'a/b/c-d-e');        // depth caps at 3
+  assert.equal(slugifyPath(''), '');
+  assert.ok(slugifyPath('x'.repeat(80)).length <= 32);        // 32/segment for paths
 });
 
 test('shortStamp + makeChannelId', () => {

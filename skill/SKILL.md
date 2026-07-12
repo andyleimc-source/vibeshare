@@ -13,6 +13,8 @@ Pages live at `https://<project>.web.app/<slug>/` and have two independent axes 
 
 `vibeshare <file.html> [access] [--expire <when>] [--name <slug>] --json`
 
+Slugs are hierarchical: default = `<repo-or-cwd>/<filename>` (e.g. `sage/brand-guidelines`). `--name` overrides — a value with `/` nests (max 3 levels), without stays flat. Manage commands take the full slug (`vibeshare rm sage/brand-guidelines`).
+
 Access flags (compose; default = anyone):
 - `--password [PIN]` — bare flag auto-generates a 4-digit PIN; pass a value for a custom/longer password.
 - `--email a@b.com,c@d.com` — restrict to an email allow-list (soft gate; emails aren't secret).

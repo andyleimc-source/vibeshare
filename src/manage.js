@@ -6,9 +6,10 @@
 import { readFileSync, statSync, copyFileSync, mkdirSync } from 'node:fs';
 import { randomInt } from 'node:crypto';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { ACCESS_MODES, normalizeEmail } from './gate.js';
 import { resolveWhen, relativeLabel } from './when.js';
-import { slugify } from './channel.js';
+import { slugifyPath } from './channel.js';
 import { paths, readManifest, removePageFiles, ensureWorkspace } from './store.js';
 import { transact, pageUrl } from './deploy.js';
 import { readConfig } from './config.js';
@@ -35,6 +36,21 @@ function genPin() {
 function titleFromHtml(html, fallback) {
   const m = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
   return (m && m[1].trim()) || fallback;
+}
+
+/**
+ * Namespace for the default slug: pages deploy to <namespace>/<file> so every
+ * project gets its own directory on the site. Uses the enclosing git repo's
+ * folder name when available, else the cwd's folder name.
+ */
+function defaultNamespace(file) {
+  try {
+    const top = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: path.dirname(path.resolve(file)), stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString().trim();
+    if (top) return path.basename(top);
+  } catch { /* not a git repo */ }
+  return path.basename(process.cwd());
 }
 
 /** Read access flags off the parsed opts → {mode, pin, emails, generated}. */
@@ -123,7 +139,12 @@ export async function shareCmd(file, opts) {
   if (st.isDirectory()) throw usage('Folders are not supported in the managed model yet — pass a single .html file.');
 
   const html = readFileSync(path.resolve(file), 'utf8');
-  const slug = slugify(opts.name || opts.slug || path.basename(file, path.extname(file))) || 'page';
+  // --name/--slug is used verbatim (may itself be "a/b" or a flat "a");
+  // otherwise pages nest under the project's namespace: <repo-or-cwd>/<file>.
+  const named = opts.name || opts.slug;
+  const slug = (named
+    ? slugifyPath(named)
+    : slugifyPath(`${defaultNamespace(file)}/${path.basename(file, path.extname(file))}`)) || 'page';
   const title = opts.title || titleFromHtml(html, slug);
   const acc = accessFromOpts(opts);
   const expireAt = opts.expire ? resolveWhen(opts.expire).toISOString() : null;
@@ -136,7 +157,7 @@ export async function shareCmd(file, opts) {
 
   const now = new Date().toISOString();
   await transact(project, (m) => {
-    mkdirSync(paths.sources(), { recursive: true });
+    mkdirSync(path.dirname(paths.source(slug)), { recursive: true });
     copyFileSync(path.resolve(file), paths.source(slug));
     const page = m.pages[slug] || { slug, createdAt: now };
     page.title = title;
