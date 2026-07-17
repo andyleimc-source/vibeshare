@@ -4,6 +4,7 @@ import { resolveWhen, parseDurationSeconds, BadWhenError, relativeLabel } from '
 import { gateHtml, normalizeEmail } from '../src/gate.js';
 import { slugify, slugifyPath, shortStamp, makeChannelId } from '../src/channel.js';
 import { classifyFirebaseError, CODES, parseLoginList, extractChannelUrl } from '../src/classify.js';
+import { parseFirstJson } from '../src/firebase.js';
 
 test('parseDurationSeconds: units, bare days, compounds', () => {
   assert.equal(parseDurationSeconds('30m'), 1800);
@@ -110,4 +111,36 @@ test('extractChannelUrl', () => {
   const text = 'Channel URL (demo): https://myproject-1234--demo-1k2j3.web.app [expires ...]';
   assert.equal(extractChannelUrl(text), 'https://myproject-1234--demo-1k2j3.web.app');
   assert.equal(extractChannelUrl('no url here'), null);
+});
+
+// A firebase command that succeeds and THEN fails its Google Analytics ping
+// emits both objects back-to-back on stdout and exits non-zero. Verbatim shape
+// captured from firebase-tools 15.22.3 (`hosting:sites:list --json`, exit 2).
+const SUCCESS_THEN_PING_TIMEOUT =
+  '{\n  "status": "success",\n  "result": {\n    "sites": [\n' +
+  '      { "name": "projects/p/sites/p", "defaultUrl": "https://p.web.app" }\n' +
+  '    ]\n  }\n}{\n  "status": "error",\n  "error": "Timed out."\n}';
+
+test('parseFirstJson: takes the first object when a failed analytics ping appends a second', () => {
+  const first = parseFirstJson(SUCCESS_THEN_PING_TIMEOUT);
+  assert.equal(first.status, 'success');
+  assert.equal(first.result.sites[0].defaultUrl, 'https://p.web.app');
+  // Whole-stream JSON.parse is exactly what used to break here.
+  assert.throws(() => JSON.parse(SUCCESS_THEN_PING_TIMEOUT), /Unexpected|Extra data/);
+});
+
+test('parseFirstJson: a real error stays an error', () => {
+  assert.equal(parseFirstJson('{"status":"error","error":"Timed out."}').status, 'error');
+});
+
+test('parseFirstJson: braces inside strings and escapes do not end the object early', () => {
+  assert.deepEqual(parseFirstJson('{"a":"}{ \\" not the end","b":{"c":[1,2]}}'),
+    { a: '}{ " not the end', b: { c: [1, 2] } });
+});
+
+test('parseFirstJson: arrays, leading noise, and no-JSON', () => {
+  assert.deepEqual(parseFirstJson('i  deploying...\n[{"x":1}]'), [{ x: 1 }]);
+  assert.equal(parseFirstJson('no json here'), null);
+  assert.equal(parseFirstJson(''), null);
+  assert.equal(parseFirstJson('{"unterminated": '), null); // never balances
 });

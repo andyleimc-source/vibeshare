@@ -73,19 +73,69 @@ export function runFirebase(args, { inherit = false, cwd } = {}) {
 }
 
 /**
+ * Extract the first complete top-level JSON value from arbitrary text.
+ *
+ * firebase can emit more than one JSON object on stdout (see runFirebaseJson),
+ * which makes a plain JSON.parse of the whole stream throw "Extra data". Scans
+ * brace/bracket depth while skipping over string literals and their escapes.
+ *
+ * @param {string} text
+ * @returns {any|null} the first parsed value, or null if there isn't one
+ */
+export function parseFirstJson(text = '') {
+  const s = String(text);
+  const start = s.search(/[{[]/);
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === '\\') escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === '{' || c === '[') depth++;
+    else if (c === '}' || c === ']') {
+      if (--depth === 0) {
+        try {
+          return JSON.parse(s.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Run firebase with --json and parse the result.
  * firebase emits `{ status: "success"|"error", result?, error? }`.
+ *
+ * Exit codes from firebase-tools are NOT trustworthy on their own: the CLI
+ * writes its result JSON, THEN fires a Google Analytics ping wrapped in a 5s
+ * timeout, and a ping that can't complete (blocked network, proxy, offline)
+ * rejects into the error path — which appends a SECOND `{"status":"error",
+ * "error":"Timed out."}` object to stdout and exits non-zero, on a command that
+ * already fully succeeded. Observed on firebase-tools 15.x.
+ *
+ * So judge by the FIRST JSON object: once `status:"success"` is on stdout the
+ * command has already committed its work, and only the ping runs after it. Fall
+ * back to the exit code only when there's no status marker to go on.
+ *
  * @returns {Promise<{ ok:boolean, data:any, raw:string, code:number, stderr:string }>}
  */
 export async function runFirebaseJson(args, opts = {}) {
   const res = await runFirebase([...args, '--json'], opts);
-  let parsed = null;
-  try {
-    parsed = JSON.parse(res.stdout);
-  } catch {
-    /* leave parsed null; caller may fall back to text scraping */
-  }
-  const ok = res.code === 0 && parsed?.status !== 'error';
+  const parsed = parseFirstJson(res.stdout);
+  const ok =
+    parsed?.status === 'success' ? true
+    : parsed?.status === 'error' ? false
+    : res.code === 0;
   return {
     ok,
     data: parsed?.result ?? parsed ?? null,
