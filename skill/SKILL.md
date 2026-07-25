@@ -33,6 +33,14 @@ Parse the JSON; give the user the `url` and (if present) the `pin`. The PIN is s
 - `vibeshare rm <slug> --json` — delete for good.
 - `vibeshare open <slug>` — open in browser.
 
+## More than one machine
+
+A deploy replaces the whole site from the local workspace, so a second machine with its own workspace **deletes** the pages it doesn't know about. If the user works on several machines, they need `vibeshare sync init <private-git-url>` on each one (same URL) — after that every command pulls before changing anything and pushes after deploying.
+
+- `vibeshare sync status --json` — `enabled`, plus `ahead`/`behind` counts.
+- `vibeshare sync --json` — pull, redeploy, push; the repair path after a failed push or an offline stretch.
+- On `SYNC_CONFLICT`, do not retry: report the paths and let the user resolve them in the workspace dir.
+
 ## First run / errors
 
 - If output is `"ok":false` with `NOT_LOGGED_IN`, `NO_PROJECT`, `TOS_REQUIRED`, or `API_DISABLED`: tell the user to run **`vibeshare init`** in their own terminal (browser OAuth/ToS — you can't do that step).

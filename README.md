@@ -23,6 +23,7 @@ vibeshare ./report.html --password        # ...gated by an auto-generated 4-digi
 - ⏰ **Scheduled auto-close** — set any lifetime (`2h`, `3d`, `2026-07-01`); pages **close** at expiry by default (delete only if you ask).
 - 🗑️ **Delete for good** — remove a page whenever you want.
 - 📋 **List & manage** — see every page's status, access mode, and expiry at a glance.
+- 💻 **Multiple machines** — point them at one private git repo and they share a single set of pages, instead of overwriting each other's.
 - 🔒 **Yours alone** — no central server, no accounts to create with us, nothing to pay. Your files stay the source of truth.
 
 ## Why
@@ -75,6 +76,11 @@ vibeshare open    <slug>                            # open in browser
 # background auto-expiry (optional, macOS)
 vibeshare cleaner install                          # runs `gc` every 15 min via launchd
 vibeshare gc                                       # apply due expiries right now
+
+# share this workspace with your other machines (see below)
+vibeshare sync init <git-url>                      # join/create the shared ledger
+vibeshare sync status                              # what's unpushed / unpulled
+vibeshare sync                                     # pull, redeploy, push (repair)
 ```
 
 Add `--json` to any command for machine-readable output (used by the Claude Code skill).
@@ -91,7 +97,23 @@ Gated pages are **encrypted in the browser** (Web Crypto: AES-256-GCM, with the 
 
 ## How it works
 
-A page lives at `https://<project>.web.app/<slug>/`. vibeshare keeps a local workspace (`~/.local/share/vibeshare/`) with a manifest as the source of truth and your original files retained locally; on every change it rebuilds the deploy folder to match and runs a full `firebase deploy`. Because a deploy replaces the whole site, **dedicate a Firebase project to vibeshare.** Expiry is tracked in the manifest (so durations are unbounded, unlike Firebase's 30-day preview channels) and applied by `vibeshare gc` — lazily on any command, or on a schedule via `vibeshare cleaner install`.
+A page lives at `https://<project>.web.app/<slug>/`. vibeshare keeps a local workspace (`~/.local/share/vibeshare/`) holding one file per page (`pages/<slug>.json`) as the source of truth, plus your original files; on every change it rebuilds the deploy folder to match and runs a full `firebase deploy`. Because a deploy replaces the whole site, **dedicate a Firebase project to vibeshare.** Expiry is tracked per page (so durations are unbounded, unlike Firebase's 30-day preview channels) and applied by `vibeshare gc` — lazily on any command, or on a schedule via `vibeshare cleaner install`.
+
+## Using more than one machine
+
+A deploy replaces the entire site with whatever the local workspace knows about. So a second machine with its own workspace doesn't just fail to update your pages — **it deletes them**, silently, with no error on either side. Firebase Hosting has no additive deploy, so the fix is to give every machine the same workspace:
+
+```bash
+# on the machine that already has your pages
+vibeshare sync init git@github.com:you/vibeshare-state.git
+
+# on each other machine — same command, same URL
+vibeshare sync init git@github.com:you/vibeshare-state.git
+```
+
+From then on every command pulls the shared state before changing anything and pushes after a successful deploy. Both machines see the same `vibeshare list` and either can close or delete any page. If two machines edited the same page, the newer edit wins; a pull that can't complete aborts the command rather than deploying a stale set of pages.
+
+**The repo must be private.** It holds the plaintext of every page you've shared, plus any passwords you've set on them.
 
 ## Claude Code skill
 
