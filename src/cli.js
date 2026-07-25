@@ -7,6 +7,7 @@ import {
 import { runInit } from './commands/init.js';
 import { doctorCmd } from './commands/doctor.js';
 import { cleanerCmd } from './commands/cleaner.js';
+import { syncCmd } from './commands/sync.js';
 import * as ui from './ui.js';
 
 const require = createRequire(import.meta.url);
@@ -68,6 +69,7 @@ Usage:
   vibeshare open    <slug>                                     open it in the browser
   vibeshare gc                                                 apply due expiries now
   vibeshare cleaner install|uninstall|status                  background auto-expiry (launchd)
+  vibeshare sync [init <git-url>|status]                       share this workspace across machines
   vibeshare init                                               first-time setup (login + project)
   vibeshare doctor                                             check your setup
 
@@ -88,7 +90,7 @@ Options:
 
 Backend: bring-your-own free Firebase Hosting. Run \`vibeshare init\` once.`;
 
-const COMMANDS = new Set(['share', 'list', 'enable', 'disable', 'access', 'expire', 'keep', 'rm', 'delete', 'remove', 'open', 'gc', 'cleaner', 'init', 'doctor', 'help']);
+const COMMANDS = new Set(['share', 'list', 'enable', 'disable', 'access', 'expire', 'keep', 'rm', 'delete', 'remove', 'open', 'gc', 'cleaner', 'sync', 'init', 'doctor', 'help']);
 
 export async function main(argv) {
   const { positionals, opts } = parse(argv);
@@ -115,6 +117,7 @@ export async function main(argv) {
       case 'open': await openCmd(rest[0], opts); return 0;
       case 'gc': await gcCmd(opts); return 0;
       case 'cleaner': await cleanerCmd(rest[0], opts); return 0;
+      case 'sync': await syncCmd(rest[0], rest[1], opts); return 0;
       case 'init': await runInit(opts); return 0;
       case 'doctor': await doctorCmd(opts); return 0;
       default: process.stdout.write(HELP + '\n'); return 1;

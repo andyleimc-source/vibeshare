@@ -5,6 +5,7 @@ import { runFirebaseJson } from './firebase.js';
 import { classifyFirebaseError } from './classify.js';
 import { paths, readManifest, writeManifest, withLock, ensureWorkspace } from './store.js';
 import { reconcile } from './render.js';
+import { syncPull, syncPush } from './sync.js';
 
 /** Live URL for a page on the project's default Hosting site. */
 export function pageUrl(project, slug) {
@@ -32,18 +33,29 @@ export async function deploy(project) {
  * The standard transaction: take the lock, mutate the manifest via `mutator`,
  * reconcile public/ to match, then deploy (unless the mutator returns
  * {redeploy:false} for manifest-only changes like scheduling).
+ *
+ * When the workspace is synced (see sync.js) it is pulled BEFORE reading the
+ * manifest and pushed after a successful deploy. The pull is not an
+ * optimisation: a deploy full-syncs the site from the local ledger, so acting
+ * on a stale one would delete every page another machine has published since.
+ *
  * @param {string} project
  * @param {(m:object)=>({redeploy?:boolean}|void)} mutator
+ * @returns {Promise<{manifest:object, deployed:boolean, warning?:string}>}
  */
 export async function transact(project, mutator) {
   ensureWorkspace(project);
   return withLock(async () => {
+    syncPull();
     const manifest = readManifest();
     if (!manifest.project) manifest.project = project;
     const snapshot = JSON.stringify(manifest); // for rollback; taken pre-mutation
     const res = mutator(manifest) || {};
     writeManifest(manifest);
-    if (res.redeploy === false) return { manifest, deployed: false };
+    if (res.redeploy === false) {
+      const { warning } = syncPush('vibeshare: update schedule');
+      return { manifest, deployed: false, warning };
+    }
     reconcile(manifest);
     try {
       await deploy(project);
@@ -60,6 +72,7 @@ export async function transact(project, mutator) {
     }
     manifest.lastDeploy = new Date().toISOString();
     writeManifest(manifest);
-    return { manifest, deployed: true };
+    const { warning } = syncPush();
+    return { manifest, deployed: true, warning };
   });
 }

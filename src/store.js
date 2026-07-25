@@ -5,20 +5,28 @@
 // every deploy. The manifest — not Firebase — is authoritative.
 //
 //   <data>/vibeshare/
-//     manifest.json        the source of truth
+//     pages/<slug>.json    one file per page — the source of truth (git-synced)
+//     sources/<slug>.html  retained plaintext original (for re-gate / unlock)
+//     meta.json            machine-local: schema version, project, lastDeploy
 //     manifest.lock        advisory lock (flock) serializing writes + deploys
 //     firebase.json        hosting config (public/, cleanUrls)
 //     .firebaserc          default project
-//     sources/<slug>.html  retained plaintext original (for re-gate / unlock)
 //     public/<slug>/...    deployed artifact (plain | gated | disabled stub)
 //     public/index.html    generic landing (never lists slugs)
 //     public/404.html      generic not-found
 //     logs/                gc + deploy logs
+//
+// Pages are stored ONE FILE PER PAGE rather than in a single manifest.json.
+// Both layouts are equivalent locally, but only the split one survives being
+// shared between machines: with `vibeshare sync` the workspace is a git repo,
+// and a single manifest.json would collide on every push because every command
+// rewrites it. Split by slug, two machines editing different pages never touch
+// the same file, so git merges them without a conflict. See sync.js.
 
 import { homedir } from 'node:os';
 import {
   mkdirSync, readFileSync, writeFileSync, renameSync, existsSync,
-  rmSync, openSync, closeSync, readdirSync,
+  rmSync, rmdirSync, openSync, closeSync, readdirSync,
 } from 'node:fs';
 import path from 'node:path';
 
@@ -29,7 +37,10 @@ export function dataDir() {
 
 export const paths = {
   root: dataDir,
-  manifest: () => path.join(dataDir(), 'manifest.json'),
+  meta: () => path.join(dataDir(), 'meta.json'),
+  pages: () => path.join(dataDir(), 'pages'),
+  page: (slug) => path.join(dataDir(), 'pages', `${slug}.json`),
+  legacyManifest: () => path.join(dataDir(), 'manifest.json'),
   lock: () => path.join(dataDir(), 'manifest.lock'),
   firebaseJson: () => path.join(dataDir(), 'firebase.json'),
   firebaserc: () => path.join(dataDir(), '.firebaserc'),
@@ -51,7 +62,7 @@ const FIREBASE_JSON = {
 
 /** Create the workspace skeleton (idempotent). Writes .firebaserc when project given. */
 export function ensureWorkspace(project) {
-  for (const d of [dataDir(), paths.sources(), paths.public(), paths.logs()]) {
+  for (const d of [dataDir(), paths.sources(), paths.public(), paths.pages(), paths.logs()]) {
     mkdirSync(d, { recursive: true, mode: 0o700 });
   }
   if (!existsSync(paths.firebaseJson())) {
@@ -60,8 +71,9 @@ export function ensureWorkspace(project) {
   if (project) {
     writeFileSync(paths.firebaserc(), JSON.stringify({ projects: { default: project } }, null, 2) + '\n');
   }
-  if (!existsSync(paths.manifest())) {
-    writeManifest({ version: 1, project: project || null, pages: {} });
+  migrateLegacyManifest(project);
+  if (!existsSync(paths.meta())) {
+    writeMeta({ version: 1, project: project || null });
   }
 }
 
@@ -69,22 +81,119 @@ export function emptyManifest(project = null) {
   return { version: 1, project, pages: {} };
 }
 
-export function readManifest() {
-  try {
-    const m = JSON.parse(readFileSync(paths.manifest(), 'utf8'));
-    if (!m.pages) m.pages = {};
-    return m;
-  } catch {
-    return emptyManifest();
-  }
+// ─────────────────────── page files ───────────────────────
+
+/**
+ * Serialize with sorted keys so the same page written on two machines produces
+ * byte-identical files — otherwise git sees a conflict on key order alone.
+ */
+export function stableStringify(value) {
+  const sortKeys = (v) => {
+    if (Array.isArray(v)) return v.map(sortKeys);
+    if (v && typeof v === 'object') {
+      const out = {};
+      for (const k of Object.keys(v).sort()) out[k] = sortKeys(v[k]);
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(sortKeys(value), null, 2) + '\n';
 }
 
-/** Atomic write (temp + rename), 0600 (the manifest holds PINs). */
-export function writeManifest(manifest) {
+/** Recursively list slugs that have a pages/<slug>.json. */
+export function pageSlugs() {
+  const out = [];
+  const root = paths.pages();
+  const walk = (rel) => {
+    const abs = rel ? path.join(root, rel) : root;
+    let entries;
+    try { entries = readdirSync(abs, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const childRel = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(childRel);
+      else if (e.name.endsWith('.json')) out.push(childRel.slice(0, -5));
+    }
+  };
+  walk('');
+  return out;
+}
+
+function readMeta() {
+  try { return JSON.parse(readFileSync(paths.meta(), 'utf8')); } catch { return {}; }
+}
+
+function writeMeta(meta) {
   mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
-  const tmp = paths.manifest() + '.tmp';
-  writeFileSync(tmp, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
-  renameSync(tmp, paths.manifest());
+  const tmp = paths.meta() + '.tmp';
+  writeFileSync(tmp, stableStringify(meta), { mode: 0o600 });
+  renameSync(tmp, paths.meta());
+}
+
+/**
+ * One-time move from the single-file manifest.json to pages/<slug>.json.
+ * Keeps the old file as manifest.json.migrated — this rewrites the source of
+ * truth, so the previous state stays recoverable by hand.
+ */
+export function migrateLegacyManifest() {
+  const legacy = paths.legacyManifest();
+  if (!existsSync(legacy)) return false;
+  let old;
+  try { old = JSON.parse(readFileSync(legacy, 'utf8')); } catch { return false; }
+  if (!old || !old.pages) return false;
+  mkdirSync(paths.pages(), { recursive: true, mode: 0o700 });
+  for (const [slug, page] of Object.entries(old.pages)) writePage(slug, page);
+  writeMeta({ version: 1, project: old.project || null, lastDeploy: old.lastDeploy || null });
+  renameSync(legacy, legacy + '.migrated');
+  return true;
+}
+
+function writePage(slug, page) {
+  const file = paths.page(slug);
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const body = stableStringify({ ...page, slug });
+  // Skip no-op writes: an unchanged mtime keeps `git status` quiet and avoids
+  // empty commits when a command touches a page without changing it.
+  try { if (readFileSync(file, 'utf8') === body) return; } catch { /* new file */ }
+  const tmp = file + '.tmp';
+  writeFileSync(tmp, body, { mode: 0o600 });
+  renameSync(tmp, file);
+}
+
+// ─────────────────────── manifest API ───────────────────────
+
+/**
+ * Assemble the in-memory manifest from meta.json + pages/. The shape is
+ * unchanged from the single-file era, so callers need not care how it's stored.
+ */
+export function readManifest() {
+  migrateLegacyManifest();
+  const meta = readMeta();
+  const pages = {};
+  for (const slug of pageSlugs()) {
+    try {
+      const page = JSON.parse(readFileSync(paths.page(slug), 'utf8'));
+      pages[slug] = { ...page, slug };
+    } catch { /* skip unreadable/half-written page file */ }
+  }
+  return { version: meta.version || 1, project: meta.project ?? null, lastDeploy: meta.lastDeploy ?? null, pages };
+}
+
+/** Persist the manifest: meta.json + one file per page, deleting dropped pages. */
+export function writeManifest(manifest) {
+  mkdirSync(paths.pages(), { recursive: true, mode: 0o700 });
+  writeMeta({
+    version: manifest.version || 1,
+    project: manifest.project ?? null,
+    lastDeploy: manifest.lastDeploy ?? null,
+  });
+  const want = new Set(Object.keys(manifest.pages || {}));
+  for (const [slug, page] of Object.entries(manifest.pages || {})) writePage(slug, page);
+  for (const slug of pageSlugs()) {
+    if (want.has(slug)) continue;
+    const file = paths.page(slug);
+    rmSync(file, { force: true });
+    pruneEmptyDirs(file, paths.pages());
+  }
 }
 
 /**
@@ -126,13 +235,18 @@ export async function withLock(fn, { timeoutMs = 30000 } = {}) {
   }
 }
 
-/** Remove empty ancestor dirs of `p`, stopping at (and never removing) `stopAt`. */
+/**
+ * Remove empty ancestor dirs of `p`, stopping at (and never removing) `stopAt`.
+ * rmdirSync, not rmSync: rmSync without `recursive` refuses to remove a
+ * directory at all, so this used to throw into the catch on every call and
+ * leave the empty dirs behind.
+ */
 function pruneEmptyDirs(p, stopAt) {
   let dir = path.dirname(p);
   while (dir.startsWith(stopAt) && dir !== stopAt) {
     try {
       if (readdirSync(dir).length > 0) break;
-      rmSync(dir, { recursive: false, force: true });
+      rmdirSync(dir);
     } catch { break; }
     dir = path.dirname(dir);
   }

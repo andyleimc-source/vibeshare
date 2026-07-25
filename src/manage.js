@@ -150,13 +150,14 @@ export async function shareCmd(file, opts) {
   const expireAt = opts.expire ? resolveWhen(opts.expire).toISOString() : null;
   const expireAction = opts['then-delete'] ? 'delete' : 'disable';
 
-  const existing = readManifest().pages[slug];
-  if (existing && !opts.force && !opts.yes) {
-    throw usage(`A page "${slug}" already exists. Re-run with --force to overwrite, or --name to pick another slug.`);
-  }
-
   const now = new Date().toISOString();
   await transact(project, (m) => {
+    // Checked inside the transaction, i.e. after the shared state is pulled:
+    // a slug taken on another machine is only visible once we're in sync, and
+    // silently overwriting it is how you clobber someone else's page.
+    if (m.pages[slug] && !opts.force && !opts.yes) {
+      throw usage(`A page "${slug}" already exists. Re-run with --force to overwrite, or --name to pick another slug.`);
+    }
     mkdirSync(path.dirname(paths.source(slug)), { recursive: true });
     copyFileSync(path.resolve(file), paths.source(slug));
     const page = m.pages[slug] || { slug, createdAt: now };
@@ -245,8 +246,9 @@ export async function keepCmd(slug, opts) {
 export async function rmCmd(slug, opts) {
   const project = resolveProject(opts);
   if (!slug) throw usage('Missing <slug>. Usage: vibeshare rm <slug>');
-  if (!readManifest().pages[slug]) throw usage(`No such page: "${slug}".`);
-  await transact(project, (m) => { removePageFiles(slug); delete m.pages[slug]; });
+  // Existence is checked inside the transaction so a page published from
+  // another machine can be removed from this one once the state is pulled.
+  await transact(project, (m) => { getPage(m, slug); removePageFiles(slug); delete m.pages[slug]; });
   if (opts.json) ui.emitJson({ ok: true, removed: slug }); else ui.ok(`Removed ${slug}.`);
 }
 
