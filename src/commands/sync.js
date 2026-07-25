@@ -39,6 +39,7 @@ export async function syncCmd(sub, arg, opts = {}) {
       return;
     }
     ui.info(`Synced with ${ui.color.cyan(st.remote)}`);
+    if (!st.reachable) ui.warn('Remote unreachable — counts below may be stale, and publishing will refuse until it is back.');
     ui.info(ui.color.dim(`  ${st.ahead} unpushed · ${st.behind} unpulled${st.dirty ? ' · uncommitted changes' : ''}`));
     return;
   }

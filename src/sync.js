@@ -75,8 +75,24 @@ function commitAll(message) {
   return true;
 }
 
+/**
+ * Fetch, or throw. Never treat a failed fetch as "the remote has nothing":
+ * that reads as an empty ledger, skips the merge, and deploys the stale local
+ * one over everything the other machine published — the exact failure this
+ * module exists to prevent. Offline must stop the command, not sail past it.
+ */
+function fetchOrThrow() {
+  if (git(['fetch', 'origin', '--quiet'], { check: false }) !== null) return;
+  const e = new Error(
+    `Could not reach the shared vibeshare state (${remoteUrl() || 'origin'}). ` +
+    'Refusing to continue: deploying without it would delete pages published from your other machines.',
+  );
+  e.code = 'SYNC_OFFLINE';
+  throw e;
+}
+
 function remoteBranchExists() {
-  git(['fetch', 'origin', '--quiet'], { check: false });
+  fetchOrThrow();
   return git(['rev-parse', '--verify', `origin/${BRANCH}`], { check: false }) !== null;
 }
 
@@ -204,13 +220,16 @@ export function syncInit(url) {
 /** Human-readable state for `vibeshare sync status`. */
 export function syncStatus() {
   if (!isSyncEnabled()) return { enabled: false, dir: dataDir() };
-  git(['fetch', 'origin', '--quiet'], { check: false });
+  // status is a read-only report — an unreachable remote is worth showing, not
+  // worth failing on, so this is the one place a failed fetch is tolerated.
+  const reachable = git(['fetch', 'origin', '--quiet'], { check: false }) !== null;
   const ahead = git(['rev-list', '--count', `origin/${BRANCH}..${BRANCH}`], { check: false });
   const behind = git(['rev-list', '--count', `${BRANCH}..origin/${BRANCH}`], { check: false });
   return {
     enabled: true,
     dir: dataDir(),
     remote: remoteUrl(),
+    reachable,
     ahead: Number(ahead || 0),
     behind: Number(behind || 0),
     dirty: hasChanges(),

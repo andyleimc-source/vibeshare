@@ -233,6 +233,28 @@ test('sync: syncInit merges what the remote already has (unrelated histories)', 
   assert.deepEqual(Object.keys(store.readManifest().pages).sort(), ['reelie/report', 'sage/guide']);
 });
 
+test('sync: an unreachable remote aborts instead of silently deploying a stale ledger', async (t) => {
+  const { dir, store, sync, cleanup } = await freshWorkspace();
+  t.after(cleanup);
+  const bare = mkdtempSync(path.join(tmpdir(), 'vibeshare-remote6-'));
+  t.after(() => rmSync(bare, { recursive: true, force: true }));
+  git(bare, ['init', '--bare', '-b', 'main']);
+
+  store.ensureWorkspace('proj');
+  const m = store.readManifest();
+  m.pages['mine'] = page('mine', '2026-07-25T10:00:00.000Z');
+  store.writeManifest(m);
+  git(dir, ['init', '-b', 'main']);
+  gitIdentity(dir);
+  sync.syncInit(bare);
+
+  // remote disappears (offline, revoked creds, moved repo)
+  rmSync(bare, { recursive: true, force: true });
+  // Must NOT read as "the remote has no pages" — that skips the merge and the
+  // next deploy wipes whatever the other machine published.
+  assert.throws(() => sync.syncPull(), (e) => e.code === 'SYNC_OFFLINE');
+});
+
 test('sync: public/ and machine-local files are never shared', async (t) => {
   const { dir, store, sync, cleanup } = await freshWorkspace();
   t.after(cleanup);
