@@ -23,6 +23,7 @@ vibeshare ./report.html --password        # ……再加一个自动生成的 4 
 - ⏰ **定时自动关闭** —— 任意时长（`2h`、`3d`、`2026-07-01`）；到期默认**关闭**（要删才删）。
 - 🗑️ **彻底删除** —— 想删随时删。
 - 📋 **列出与管理** —— 一眼看到每个页面的开关状态、访问方式、到期时间。
+- 💻 **多台机器** —— 指向同一个私有 git 仓库即可共用一份页面清单，不会互相覆盖。
 - 🔒 **完全属于你** —— 没有中心服务器、不用在我们这注册、零费用，本地文件始终是源头。
 
 ## 为什么用它
@@ -75,6 +76,11 @@ vibeshare open    <slug>                            # 浏览器打开
 # 后台自动到期（可选，macOS）
 vibeshare cleaner install                          # 用 launchd 每 15 分钟跑一次 gc
 vibeshare gc                                       # 立即应用已到期的页面
+
+# 把工作区共享给你的其他机器（见下）
+vibeshare sync init <git-url>                      # 加入/创建共享清单
+vibeshare sync status                              # 有多少没推 / 没拉
+vibeshare sync                                     # 拉取、重新部署、推送（修复用）
 ```
 
 任意命令加 `--json` 即输出机器可解析的 JSON（Claude Code skill 用的就是它）。
@@ -91,7 +97,23 @@ vibeshare gc                                       # 立即应用已到期的页
 
 ## 原理
 
-页面位于 `https://<项目>.web.app/<slug>/`。vibeshare 在本地维护一个工作区（`~/.local/share/vibeshare/`），以 manifest 为唯一真相源、并保留你的原始文件；每次变更都会按 manifest 重建部署目录，再做一次全量 `firebase deploy`。因为部署会替换整个站点，**请给 vibeshare 专用一个 Firebase 项目**。到期信息记在 manifest 里（所以时长不受限，不像 Firebase 预览频道封顶 30 天），由 `vibeshare gc` 应用——任意命令时惰性触发，或用 `vibeshare cleaner install` 定时触发。
+页面位于 `https://<项目>.web.app/<slug>/`。vibeshare 在本地维护一个工作区（`~/.local/share/vibeshare/`），以「一页一个文件」（`pages/<slug>.json`）为唯一真相源、并保留你的原始文件；每次变更都会照着它重建部署目录，再做一次全量 `firebase deploy`。因为部署会替换整个站点，**请给 vibeshare 专用一个 Firebase 项目**。到期信息记在每个页面自己的文件里（所以时长不受限，不像 Firebase 预览频道封顶 30 天），由 `vibeshare gc` 应用——任意命令时惰性触发，或用 `vibeshare cleaner install` 定时触发。
+
+## 用多台机器
+
+部署会拿本地工作区知道的内容替换整个站点。所以第二台机器如果有自己独立的工作区，它不是「没更新」你的页面——而是**把它们删掉**，悄无声息，两边都不报错。Firebase Hosting 没有增量部署，所以解法是让每台机器共用同一个工作区：
+
+```bash
+# 在已经有页面的那台机器上
+vibeshare sync init git@github.com:you/vibeshare-state.git
+
+# 在其他每台机器上 —— 同样的命令，同样的 URL
+vibeshare sync init git@github.com:you/vibeshare-state.git
+```
+
+之后每条命令都会在改动前拉取共享状态、在部署成功后推送。两台看到的 `vibeshare list` 一致，任一台都能关闭或删除任何页面。若同一个页面在两台都改过，以更新时间较晚的为准；拉取失败会中止命令，而不是拿一份过期的页面清单去部署。
+
+**仓库必须是私有的。** 它存着你分享过的每个页面的原文，以及你给它们设的密码。
 
 ## Claude Code 技能
 
