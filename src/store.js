@@ -100,6 +100,24 @@ export function stableStringify(value) {
   return JSON.stringify(sortKeys(value), null, 2) + '\n';
 }
 
+/** Recursively list slugs that have a sources/<slug>.html. */
+export function sourceSlugs() {
+  const out = [];
+  const root = paths.sources();
+  const walk = (rel) => {
+    const abs = rel ? path.join(root, rel) : root;
+    let entries;
+    try { entries = readdirSync(abs, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const childRel = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(childRel);
+      else if (e.name.endsWith('.html')) out.push(childRel.slice(0, -5));
+    }
+  };
+  walk('');
+  return out;
+}
+
 /** Recursively list slugs that have a pages/<slug>.json. */
 export function pageSlugs() {
   const out = [];

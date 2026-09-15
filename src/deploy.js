@@ -5,6 +5,7 @@ import { runFirebaseJson } from './firebase.js';
 import { classifyFirebaseError } from './classify.js';
 import { paths, readManifest, writeManifest, withLock, ensureWorkspace } from './store.js';
 import { reconcile } from './render.js';
+import * as ui from './ui.js';
 import { syncPull, syncPush } from './sync.js';
 
 /** Live URL for a page on the project's default Hosting site. */
@@ -27,6 +28,21 @@ export async function deploy(project) {
     throw e;
   }
   return r;
+}
+
+/**
+ * Surface pages reconcile() could not render. They are warnings, not errors:
+ * the deploy goes ahead so one damaged page never blocks publishing (see
+ * render.js). Printing every one of them would bury the command's own output,
+ * so a long list is summarised — `vibeshare doctor` prints it in full.
+ */
+const MAX_SHOWN = 5;
+function reportWarnings(warnings) {
+  if (!warnings.length) return;
+  for (const w of warnings.slice(0, MAX_SHOWN)) ui.warn(w);
+  if (warnings.length > MAX_SHOWN) {
+    ui.warn(`…and ${warnings.length - MAX_SHOWN} more. Run \`vibeshare doctor\` for the full list.`);
+  }
 }
 
 /**
@@ -56,7 +72,8 @@ export async function transact(project, mutator) {
       const { warning } = syncPush('vibeshare: update schedule');
       return { manifest, deployed: false, warning };
     }
-    reconcile(manifest);
+    const { warnings } = reconcile(manifest);
+    reportWarnings(warnings);
     try {
       await deploy(project);
     } catch (err) {
@@ -73,6 +90,6 @@ export async function transact(project, mutator) {
     manifest.lastDeploy = new Date().toISOString();
     writeManifest(manifest);
     const { warning } = syncPush();
-    return { manifest, deployed: true, warning };
+    return { manifest, deployed: true, warning, warnings };
   });
 }

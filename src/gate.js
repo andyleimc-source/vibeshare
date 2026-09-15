@@ -190,6 +190,25 @@ font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC",s
 <p>${t} is not available right now.</p></div></body></html>`;
 }
 
+/**
+ * Served when a page's retained source is gone and nothing was ever deployed
+ * for it. Deliberately says nothing about WHY — a visitor is not owed the
+ * workspace's internal state — while `reconcile()` reports the real reason to
+ * the operator through its warnings.
+ */
+export function unavailableStub(title = 'vibeshare') {
+  const t = String(title).replace(/</g, '&lt;');
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><title>Page unavailable</title>
+<style>:root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;
+font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC",sans-serif;background:#0f1115;color:#e8e8ea}
+.b{text-align:center;padding:32px}.i{font-size:40px}h1{font-size:18px;margin:14px 0 6px}p{color:#9aa0aa;margin:0;font-size:13px}</style>
+</head><body><div class="b"><div class="i">📄</div><h1>This page is unavailable</h1>
+<p>${t} could not be rendered.</p></div></body></html>`;
+}
+
 /** Generic landing page served at the site root — never lists slugs. */
 export function landingPage() {
   return `<!doctype html>

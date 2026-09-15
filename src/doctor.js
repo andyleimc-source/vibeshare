@@ -3,6 +3,8 @@
 import { runFirebase, runFirebaseJson, resolveFirebase } from './firebase.js';
 import { classifyFirebaseError, parseLoginList, CODES } from './classify.js';
 import { readConfig } from './config.js';
+import { readManifest, sourceSlugs, paths } from './store.js';
+import { existsSync } from 'node:fs';
 
 /** Is a firebase binary resolvable at all? */
 export function checkFirebasePresent() {
@@ -29,12 +31,34 @@ export async function listProjects() {
 }
 
 /**
+ * Ledger integrity: every page record needs its retained source to be
+ * re-renderable. A record without one still deploys (render.js keeps whatever
+ * is live and warns), but it can never be updated, re-gated, or rebuilt on a
+ * fresh machine — so it is worth surfacing before a deploy rather than during.
+ * @returns {{ok:boolean, pages:number, missingSources:string[], orphanSources:string[]}}
+ */
+export function checkLedger() {
+  const manifest = readManifest();
+  const slugs = Object.keys(manifest.pages);
+  const missingSources = slugs.filter((slug) => !existsSync(paths.source(slug))).sort();
+  const known = new Set(slugs);
+  const orphanSources = sourceSlugs().filter((slug) => !known.has(slug)).sort();
+  return {
+    ok: missingSources.length === 0 && orphanSources.length === 0,
+    pages: slugs.length,
+    missingSources,
+    orphanSources,
+  };
+}
+
+/**
  * Full preflight. Returns a structured report; never throws.
  * @returns {Promise<{ ok:boolean, checks:object, code?:string, hint?:string }>}
  */
 export async function doctor() {
   const checks = {};
   checks.firebase = checkFirebasePresent();
+  checks.ledger = checkLedger();
 
   const login = await checkLogin();
   checks.login = login;
